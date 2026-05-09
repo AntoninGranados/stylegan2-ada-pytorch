@@ -14,6 +14,16 @@ import warnings
 import dnnlib
 
 #----------------------------------------------------------------------------
+# Device selection.
+
+def get_device():
+    if torch.cuda.is_available():
+        return torch.device('cuda')
+    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        return torch.device('mps')
+    return torch.device('cpu')
+
+#----------------------------------------------------------------------------
 # Cached construction of constant tensors. Avoids CPU=>GPU copy when the
 # same constant is used multiple times.
 

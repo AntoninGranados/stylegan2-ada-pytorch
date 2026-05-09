@@ -19,6 +19,7 @@ import PIL.Image
 import torch
 
 import legacy
+from torch_utils import misc
 
 #----------------------------------------------------------------------------
 
@@ -79,9 +80,9 @@ def generate_images(
     """
 
     print('Loading networks from "%s"...' % network_pkl)
-    device = torch.device('cuda')
+    device = misc.get_device()
     with dnnlib.util.open_url(network_pkl) as f:
-        G = legacy.load_network_pkl(f)['G_ema'].to(device) # type: ignore
+        G = legacy.load_network_pkl(f)['G_ema'].eval().requires_grad_(False).to(device) # type: ignore
 
     os.makedirs(outdir, exist_ok=True)
 
@@ -91,10 +92,11 @@ def generate_images(
             print ('warn: --seeds is ignored when using --projected-w')
         print(f'Generating images from projected W "{projected_w}"')
         ws = np.load(projected_w)['w']
-        ws = torch.tensor(ws, device=device) # pylint: disable=not-callable
+        ws = torch.tensor(ws, dtype=torch.float32, device=device) # pylint: disable=not-callable
         assert ws.shape[1:] == (G.num_ws, G.w_dim)
         for idx, w in enumerate(ws):
-            img = G.synthesis(w.unsqueeze(0), noise_mode=noise_mode)
+            with torch.no_grad():
+                img = G.synthesis(w.unsqueeze(0), noise_mode=noise_mode)
             img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
             img = PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{outdir}/proj{idx:02d}.png')
         return
@@ -115,8 +117,9 @@ def generate_images(
     # Generate images.
     for seed_idx, seed in enumerate(seeds):
         print('Generating image for seed %d (%d/%d) ...' % (seed, seed_idx, len(seeds)))
-        z = torch.from_numpy(np.random.RandomState(seed).randn(1, G.z_dim)).to(device)
-        img = G(z, label, truncation_psi=truncation_psi, noise_mode=noise_mode)
+        z = torch.from_numpy(np.random.RandomState(seed).randn(1, G.z_dim)).to(device=device, dtype=torch.float32)
+        with torch.no_grad():
+            img = G(z, label, truncation_psi=truncation_psi, noise_mode=noise_mode)
         img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
         PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{outdir}/seed{seed:04d}.png')
 

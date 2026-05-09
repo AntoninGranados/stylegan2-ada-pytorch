@@ -19,6 +19,7 @@ import PIL.Image
 import torch
 
 import legacy
+from torch_utils import misc
 
 #----------------------------------------------------------------------------
 
@@ -60,22 +61,24 @@ def generate_style_mix(
         --network=https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/metfaces.pkl
     """
     print('Loading networks from "%s"...' % network_pkl)
-    device = torch.device('cuda')
+    device = misc.get_device()
     with dnnlib.util.open_url(network_pkl) as f:
-        G = legacy.load_network_pkl(f)['G_ema'].to(device) # type: ignore
+        G = legacy.load_network_pkl(f)['G_ema'].eval().requires_grad_(False).to(device) # type: ignore
 
     os.makedirs(outdir, exist_ok=True)
 
     print('Generating W vectors...')
     all_seeds = list(set(row_seeds + col_seeds))
     all_z = np.stack([np.random.RandomState(seed).randn(G.z_dim) for seed in all_seeds])
-    all_w = G.mapping(torch.from_numpy(all_z).to(device), None)
-    w_avg = G.mapping.w_avg
-    all_w = w_avg + (all_w - w_avg) * truncation_psi
+    with torch.no_grad():
+        all_w = G.mapping(torch.from_numpy(all_z).to(device=device, dtype=torch.float32), None)
+        w_avg = G.mapping.w_avg
+        all_w = w_avg + (all_w - w_avg) * truncation_psi
     w_dict = {seed: w for seed, w in zip(all_seeds, list(all_w))}
 
     print('Generating images...')
-    all_images = G.synthesis(all_w, noise_mode=noise_mode)
+    with torch.no_grad():
+        all_images = G.synthesis(all_w, noise_mode=noise_mode)
     all_images = (all_images.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8).cpu().numpy()
     image_dict = {(seed, seed): image for seed, image in zip(all_seeds, list(all_images))}
 
@@ -84,7 +87,8 @@ def generate_style_mix(
         for col_seed in col_seeds:
             w = w_dict[row_seed].clone()
             w[col_styles] = w_dict[col_seed][col_styles]
-            image = G.synthesis(w[np.newaxis], noise_mode=noise_mode)
+            with torch.no_grad():
+                image = G.synthesis(w[np.newaxis], noise_mode=noise_mode)
             image = (image.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
             image_dict[(row_seed, col_seed)] = image[0].cpu().numpy()
 
