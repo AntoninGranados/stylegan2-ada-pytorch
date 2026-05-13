@@ -21,6 +21,7 @@ from torch.utils.file_baton import FileBaton
 # Global options.
 
 verbosity = 'brief' # Verbosity level: 'none', 'brief', 'full'
+force_disable_problematic_cuda_kernels = False
 
 #----------------------------------------------------------------------------
 # Internal helper funcs.

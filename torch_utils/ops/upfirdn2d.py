@@ -14,7 +14,7 @@ import numpy as np
 import torch
 import traceback
 
-from .. import custom_ops
+import stylegan2.torch_utils.custom_ops as custom_ops
 from .. import misc
 from . import conv2d_gradfix
 
@@ -28,10 +28,11 @@ def _init():
     if not _inited:
         sources = ['upfirdn2d.cpp', 'upfirdn2d.cu']
         sources = [os.path.join(os.path.dirname(__file__), s) for s in sources]
-        try:
-            _plugin = custom_ops.get_plugin('upfirdn2d_plugin', sources=sources, extra_cuda_cflags=['--use_fast_math'])
-        except:
-            warnings.warn('Failed to build CUDA kernels for upfirdn2d. Falling back to slow reference implementation. Details:\n\n' + traceback.format_exc())
+        if not custom_ops.force_disable_problematic_cuda_kernels:
+            try:
+                _plugin = custom_ops.get_plugin('upfirdn2d_plugin', sources=sources, extra_cuda_cflags=['--use_fast_math'])
+            except:
+                warnings.warn('Failed to build CUDA kernels for upfirdn2d. Falling back to slow reference implementation. Details:\n\n' + traceback.format_exc())
     return _plugin is not None
 
 def _parse_scaling(scaling):
